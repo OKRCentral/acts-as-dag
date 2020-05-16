@@ -19,8 +19,8 @@ module Dag
       end
     end
 
-    write_inheritable_attribute :acts_as_dag_options, conf
-    class_inheritable_reader :acts_as_dag_options
+    class_attribute :acts_as_dag_options
+    self.acts_as_dag_options = conf
 
     extend Columns
     include Columns
@@ -69,11 +69,11 @@ module Dag
       validates descendant_type_column_name.to_sym, :presence => true
       validates ancestor_id_column_name.to_sym, :uniqueness => {:scope => [ancestor_type_column_name, descendant_type_column_name, descendant_id_column_name]}
 
-      scope :with_ancestor, lambda { |ancestor| where(ancestor_id_column_name => ancestor.id, ancestor_type_column_name => ancestor.class.to_s) }
-      scope :with_descendant, lambda { |descendant| where(descendant_id_column_name => descendant.id, descendant_type_column_name => descendant.class.to_s) }
+      scope :with_ancestor, -> (ancestor) { where(ancestor_id_column_name => ancestor.id, ancestor_type_column_name => ancestor.class.to_s) }
+      scope :with_descendant, -> (descendant) { where(descendant_id_column_name => descendant.id, descendant_type_column_name => descendant.class.to_s) }
 
-      scope :with_ancestor_point, lambda { |point| where(ancestor_id_column_name => point.id, ancestor_type_column_name => point.type) }
-      scope :with_descendant_point, lambda { |point| where(descendant_id_column_name => point.id, descendant_type_column_name => point.type) }
+      scope :with_ancestor_point, -> (point) { where(ancestor_id_column_name => point.id, ancestor_type_column_name => point.type) }
+      scope :with_descendant_point, -> (point) { where(descendant_id_column_name => point.id, descendant_type_column_name => point.type) }
 
       extend Polymorphic
       include Polymorphic
@@ -83,22 +83,22 @@ module Dag
 
       validates ancestor_id_column_name.to_sym, :uniqueness => {:scope => [descendant_id_column_name]}
 
-      scope :with_ancestor, lambda { |ancestor| where(ancestor_id_column_name => ancestor.id) }
-      scope :with_descendant, lambda { |descendant| where(descendant_id_column_name => descendant.id) }
+      scope :with_ancestor, -> (ancestor) { where(ancestor_id_column_name => ancestor.id) }
+      scope :with_descendant, -> (descendant) { where(descendant_id_column_name => descendant.id) }
 
-      scope :with_ancestor_point, lambda { |point| where(ancestor_id_column_name => point.id) }
-      scope :with_descendant_point, lambda { |point| where(descendant_id_column_name => point.id) }
+      scope :with_ancestor_point, -> (point) { where(ancestor_id_column_name => point.id) }
+      scope :with_descendant_point, -> (point) { where(descendant_id_column_name => point.id) }
 
       extend Standard
       include Standard
     end
 
     # TODO: rename? breaks when using 'where' query because :direct scope name and :direct => true parameter conflict?
-    scope :direct, :conditions => {:direct => true}
-    scope :indirect, :conditions => {:direct => false}
+    scope :direct, -> { where(:direct => true) }
+    scope :indirect, -> { where(:direct => false) }
 
-    scope :ancestor_nodes, :joins => :ancestor
-    scope :descendant_nodes, :joins => :descendant
+    scope :ancestor_nodes, -> { joins(:ancestor) }
+    scope :descendant_nodes, -> { joins(:descendant) }
 
     validates ancestor_id_column_name.to_sym, :presence => true,
               :numericality => true
@@ -163,8 +163,8 @@ module Dag
               has_many :#{prefix}links_as_ancestor, :as => :ancestor, :class_name => '#{dag_link_class_name}'
               has_many :#{prefix}links_as_descendant, :as => :descendant, :class_name => '#{dag_link_class_name}'
 
-              has_many :#{prefix}links_as_parent, :as => :ancestor, :class_name => '#{dag_link_class_name}', :conditions => {'#{dag_link_class.direct_column_name}' => true}
-              has_many :#{prefix}links_as_child, :as => :descendant, :class_name => '#{dag_link_class_name}', :conditions => {'#{dag_link_class.direct_column_name}' => true}
+              has_many :#{prefix}links_as_parent, -> { where('#{dag_link_class.direct_column_name}' => true) }, :as => :ancestor, :class_name => '#{dag_link_class_name}'
+              has_many :#{prefix}links_as_child, -> { where('#{dag_link_class.direct_column_name}' => true) }, :as => :descendant, :class_name => '#{dag_link_class_name}'
 
       EOL
 
@@ -173,9 +173,9 @@ module Dag
       conf[:ancestor_class_names].each do |class_name|
         table_name = class_name.tableize
         self.class_eval <<-EOL2
-                has_many :#{prefix}links_as_descendant_for_#{table_name}, :as => :descendant, :class_name => '#{dag_link_class_name}', :conditions => {'#{dag_link_class.ancestor_type_column_name}' => '#{class_name}'}
+                has_many :#{prefix}links_as_descendant_for_#{table_name}, -> { where('#{dag_link_class.ancestor_type_column_name}' => '#{class_name}') }, :as => :descendant, :class_name => '#{dag_link_class_name}'
                 has_many :#{prefix}ancestor_#{table_name}, :through => :#{prefix}links_as_descendant_for_#{table_name}, :source => :ancestor, :source_type => '#{class_name}'
-                has_many :#{prefix}links_as_child_for_#{table_name}, :as => :descendant, :class_name => '#{dag_link_class_name}', :conditions => {'#{dag_link_class.ancestor_type_column_name}' => '#{class_name}','#{dag_link_class.direct_column_name}' => true}
+                has_many :#{prefix}links_as_child_for_#{table_name}, -> { where('#{dag_link_class.ancestor_type_column_name}' => '#{class_name}','#{dag_link_class.direct_column_name}' => true) }, :as => :descendant, :class_name => '#{dag_link_class_name}'
                 has_many :#{prefix}parent_#{table_name}, :through => :#{prefix}links_as_child_for_#{table_name}, :source => :ancestor, :source_type => '#{class_name}'
 
               	def #{prefix}root_for_#{table_name}?
@@ -223,10 +223,10 @@ module Dag
       conf[:descendant_class_names].each do |class_name|
         table_name = class_name.tableize
         self.class_eval <<-EOL3
-                has_many :#{prefix}links_as_ancestor_for_#{table_name}, :as => :ancestor, :class_name => '#{dag_link_class_name}', :conditions => {'#{dag_link_class.descendant_type_column_name}' => '#{class_name}'}
+                has_many :#{prefix}links_as_ancestor_for_#{table_name}, -> { where('#{dag_link_class.descendant_type_column_name}' => '#{class_name}') }, :as => :ancestor, :class_name => '#{dag_link_class_name}'
                 has_many :#{prefix}descendant_#{table_name}, :through => :#{prefix}links_as_ancestor_for_#{table_name}, :source => :descendant, :source_type => '#{class_name}'
 
-                has_many :#{prefix}links_as_parent_for_#{table_name}, :as => :ancestor, :class_name => '#{dag_link_class_name}', :conditions => {'#{dag_link_class.descendant_type_column_name}' => '#{class_name}','#{dag_link_class.direct_column_name}' => true}
+                has_many :#{prefix}links_as_parent_for_#{table_name}, -> { where('#{dag_link_class.descendant_type_column_name}' => '#{class_name}','#{dag_link_class.direct_column_name}' => true) }, :as => :ancestor, :class_name => '#{dag_link_class_name}'
                 has_many :#{prefix}child_#{table_name}, :through => :#{prefix}links_as_parent_for_#{table_name}, :source => :descendant, :source_type => '#{class_name}'
 
 								def #{prefix}leaf_for_#{table_name}?
@@ -275,8 +275,8 @@ module Dag
               has_many :#{prefix}ancestors, :through => :#{prefix}links_as_descendant, :source => :ancestor
               has_many :#{prefix}descendants, :through => :#{prefix}links_as_ancestor, :source => :descendant
 
-              has_many :#{prefix}links_as_parent, :foreign_key => '#{dag_link_class.ancestor_id_column_name}', :class_name => '#{dag_link_class_name}', :conditions => {'#{dag_link_class.direct_column_name}' => true}
-              has_many :#{prefix}links_as_child, :foreign_key => '#{dag_link_class.descendant_id_column_name}', :class_name => '#{dag_link_class_name}', :conditions => {'#{dag_link_class.direct_column_name}' => true}
+              has_many :#{prefix}links_as_parent, -> { where('#{dag_link_class.direct_column_name}' => true) }, :foreign_key => '#{dag_link_class.ancestor_id_column_name}', :class_name => '#{dag_link_class_name}'
+              has_many :#{prefix}links_as_child, -> { where('#{dag_link_class.direct_column_name}' => true) }, :foreign_key => '#{dag_link_class.descendant_id_column_name}', :class_name => '#{dag_link_class_name}'
 
               has_many :#{prefix}parents, :through => :#{prefix}links_as_child, :source => :ancestor
               has_many :#{prefix}children, :through => :#{prefix}links_as_parent, :source => :descendant
